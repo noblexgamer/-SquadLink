@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SquadLink - Voice & Gaming Overlay</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg-primary: #313338;
+      --bg-secondary: #2b2d31;
+      --bg-tertiary: #1e1f22;
+      --bg-accent: #383a40;
+      --bg-user-bar: #232428;
+      --bg-floating: rgba(30, 31, 34, 0.96);
+      --blurple: #5865f2;
+      --blurple-hover: #4752c4;
+      --green: #23a55a;
+      --red: #f23f43;
+      --text-primary: #f2f3f5;
+      --text-normal: #dbdee1;
+      --text-muted: #949ba4;
+      --border-light: rgba(255, 255, 255, 0.08);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-tertiary);
+      color: var(--text-normal);
+      height: 100vh;
+      overflow: hidden;
+      user-select: none;
+    }
+    .hidden { display: none !important; }
+
+    /* LOGO STYLES */
+    .auth-logo-img {
+      width: 84px;
+      height: 84px;
+      border-radius: 22px;
+      object-fit: cover;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      border: 2px solid rgba(255, 255, 255, 0.12);
+      transition: transform 0.2s ease;
+      display: inline-block;
+    }
+    .auth-logo-img:hover {
+      transform: scale(1.04);
+    }
+    .server-logo-img {
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      object-fit: cover;
+    }
+
+    /* AUTH SCREEN */
+    .auth-wrapper {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(circle at center, #2c2f38 0%, #1e1f22 100%); z-index: 1000;
+    }
+    .auth-card {
+      background: var(--bg-primary); width: 100%; max-width: 480px; padding: 36px;
+      border-radius: var(--radius-lg); box-shadow: 0 16px 40px rgba(0,0,0,0.6); border: 1px solid var(--border-light);
+    }
+    .auth-logo { text-align: center; margin-bottom: 22px; }
+    .auth-logo h2 { color: var(--text-primary); font-size: 22px; margin-top: 10px; }
+    .auth-subtitle { color: var(--text-muted); font-size: 13px; margin-top: 4px; }
+    .auth-tabs { display: flex; background: var(--bg-tertiary); padding: 4px; border-radius: var(--radius-sm); margin-bottom: 20px; }
+    .tab-btn { flex: 1; background: transparent; border: none; color: var(--text-muted); padding: 10px; font-weight: 600; cursor: pointer; border-radius: 4px; }
+    .tab-btn.active { background: var(--blurple); color: #fff; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
+    .form-group input { width: 100%; background: var(--bg-tertiary); border: 1px solid rgba(0,0,0,0.4); border-radius: var(--radius-sm); padding: 11px; color: #fff; outline: none; }
+    .form-group input:focus { border-color: var(--blurple); }
+    .btn-primary { background: var(--blurple); color: #fff; border: none; border-radius: var(--radius-sm); padding: 12px; font-weight: 600; width: 100%; cursor: pointer; }
+    .btn-primary:hover { background: var(--blurple-hover); }
+    .btn-secondary { background: var(--bg-accent); color: #fff; border: none; border-radius: var(--radius-sm); padding: 8px 12px; font-size: 12px; cursor: pointer; }
+    .quick-demo-accounts { margin-top: 20px; text-align: center; border-top: 1px solid var(--border-light); padding-top: 14px; }
+    .quick-demo-accounts p { font-size: 12px; color: var(--text-muted); }
+    .demo-buttons { display: flex; gap: 8px; justify-content: center; margin-top: 8px; }
+
+    /* LAYOUT PRINCIPAL */
+    .app-layout { display: grid; grid-template-columns: 72px 260px 1fr; height: 100vh; }
+    .servers-nav { background: var(--bg-tertiary); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 10px; border-right: 1px solid var(--border-light); }
+    .server-pill { width: 48px; height: 48px; border-radius: 50%; background: var(--bg-primary); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 20px; transition: 0.2s; color: #fff; overflow: hidden; }
+    .server-pill:hover, .server-pill.active { border-radius: 16px; background: var(--blurple); }
+    .nav-separator { width: 32px; height: 2px; background: var(--border-light); }
+
+    .channels-sidebar { background: var(--bg-secondary); display: flex; flex-direction: column; border-right: 1px solid var(--border-light); }
+    .guild-header { height: 52px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,0.2); }
+    .guild-name { font-weight: 700; color: #fff; font-size: 14px; }
+    .guild-badge { background: var(--blurple); color: #fff; font-size: 10px; font-weight: 800; padding: 2px 6px; border-radius: 4px; }
+    .sidebar-scrollable { flex: 1; overflow-y: auto; padding: 14px 8px; }
+    .channel-section { margin-bottom: 18px; }
+    .section-title { font-size: 11px; font-weight: 700; color: var(--text-muted); padding: 0 8px; margin-bottom: 6px; }
+    .channel-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 4px; cursor: pointer; color: var(--text-muted); font-size: 14px; }
+    .channel-item.active, .channel-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
+
+    /* CANALES DE VOZ */
+    .voice-channel-card { background: rgba(0,0,0,0.18); border-radius: var(--radius-sm); margin-bottom: 8px; overflow: hidden; }
+    .vc-header { display: flex; align-items: center; padding: 8px 10px; cursor: pointer; gap: 8px; }
+    .vc-header:hover { background: rgba(255,255,255,0.06); }
+    .voice-channel-card.connected-here .vc-name { color: var(--green); }
+    .vc-name { flex: 1; font-size: 13px; font-weight: 600; }
+    .vc-badge { background: var(--bg-tertiary); font-size: 11px; padding: 2px 6px; border-radius: 999px; }
+    .vc-users-list { padding: 4px 10px 8px 24px; display: flex; flex-direction: column; gap: 4px; }
+    .vc-user-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+    .mini-avatar { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; border: 2px solid transparent; }
+    .vc-user-item.is-speaking .mini-avatar { border-color: var(--green); box-shadow: 0 0 8px var(--green); }
+
+    /* CONTACTOS Y BOTÓN "AÑADIR CONTACTO NUEVO" */
+    .contacts-section { border-top: 1px solid var(--border-light); padding-top: 14px; }
+    .section-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; padding: 0 4px; }
+    .btn-add-contact-badge { background: var(--green); color: #fff; border: none; font-size: 11px; font-weight: 700; padding: 5px 9px; border-radius: var(--radius-sm); cursor: pointer; box-shadow: 0 2px 6px rgba(35,165,90,0.4); }
+    .btn-add-contact-badge:hover { background: #1e924f; }
+    .contact-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: var(--radius-sm); }
+    .contact-item:hover { background: rgba(255,255,255,0.05); }
+    .contact-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 12px; }
+    .contact-status-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .contact-status-dot.online { background: var(--green); }
+    .contact-status-dot.offline { background: var(--text-muted); }
+
+    /* USER BAR */
+    .user-profile-bar { background: var(--bg-user-bar); height: 54px; padding: 0 10px; display: flex; align-items: center; gap: 8px; }
+    .avatar-circle { width: 34px; height: 34px; border-radius: 50%; background: var(--blurple); display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; font-size: 13px; }
+    .user-meta { flex: 1; overflow: hidden; }
+    .user-display-name { font-size: 13px; font-weight: 700; color: #fff; display: block; }
+    .user-status-desc { font-size: 11px; color: var(--text-muted); }
+    .user-actions { display: flex; gap: 2px; }
+    .icon-btn { background: transparent; border: none; width: 30px; height: 30px; border-radius: 4px; cursor: pointer; color: #fff; display: flex; align-items: center; justify-content: center; }
+    .icon-btn:hover { background: rgba(255,255,255,0.1); }
+    .icon-btn.active-muted { background: rgba(242,63,67,0.25); color: var(--red); }
+
+    /* CHAT PRINCIPAL */
+    .chat-area { background: var(--bg-primary); display: flex; flex-direction: column; height: 100vh; }
+    .chat-header { height: 52px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid rgba(0,0,0,0.2); }
+    .chat-title { font-weight: 700; color: #fff; }
+    .status-tag { font-size: 11px; background: rgba(88,101,242,0.15); color: #9aa5ff; padding: 4px 8px; border-radius: 999px; }
+    .messages-stream { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+    .message-entry { display: flex; gap: 12px; }
+    .message-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .message-author { font-size: 14px; font-weight: 600; color: #fff; }
+    .message-time { font-size: 11px; color: var(--text-muted); margin-left: 6px; }
+    .message-text { font-size: 14px; margin-top: 2px; line-height: 1.4; color: var(--text-normal); }
+    .chat-input-bar { padding: 0 18px 20px 18px; }
+    .chat-input-wrap { background: var(--bg-accent); border-radius: 8px; display: flex; padding: 4px 10px; }
+    .chat-input-wrap input { flex: 1; background: transparent; border: none; padding: 12px; color: #fff; outline: none; font-size: 14px; }
+    .chat-send-btn { background: transparent; border: none; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; }
+
+    /* MODAL AÑADIR CONTACTO */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 2000; }
+    .modal-card { background: var(--bg-primary); width: 100%; max-width: 440px; border-radius: var(--radius-lg); padding: 22px; border: 1px solid var(--border-light); }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .modal-close { background: transparent; border: none; font-size: 22px; color: var(--text-muted); cursor: pointer; }
+    .modal-subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+    .modal-input-box { display: flex; gap: 8px; }
+    .modal-input-box input { flex: 1; background: var(--bg-tertiary); border: 1px solid rgba(0,0,0,0.4); border-radius: 6px; padding: 10px; color: #fff; outline: none; }
+    .btn-submit-friend { width: auto; background: var(--green); }
+
+    /* OVERLAY FLOTANTE / MODO JUEGO PIP */
+    .floating-call-widget {
+      position: fixed; bottom: 20px; right: 20px; width: 310px; background: var(--bg-floating);
+      backdrop-filter: blur(14px); border-radius: var(--radius-lg); border: 1px solid var(--border-light);
+      box-shadow: 0 16px 40px rgba(0,0,0,0.65); z-index: 9999; display: flex; flex-direction: column; overflow: hidden;
+    }
+    .floating-call-widget.collapsed .overlay-body { display: none; }
+    .overlay-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(0,0,0,0.3); }
+    .overlay-title-group { display: flex; align-items: center; gap: 8px; }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); }
+    .live-dot.pulse { animation: pulse-ring 1.8s infinite; }
+    @keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(35,165,90,0.7); } 70% { box-shadow: 0 0 0 6px rgba(35,165,90,0); } }
+    .overlay-status { font-size: 10px; font-weight: 800; color: var(--green); }
+    .overlay-room { font-size: 12px; font-weight: 700; color: #fff; }
+    .overlay-action-btn { background: rgba(255,255,255,0.08); border: 1px solid var(--border-light); color: #fff; font-size: 10px; padding: 4px 6px; border-radius: 4px; cursor: pointer; font-weight: 600; }
+
+    /* ANILLO VERDE AL HABLAR (VAD) */
+    .overlay-body { padding: 12px; }
+    .overlay-participants-grid { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+    .participant-card { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .participant-avatar { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; border: 3px solid transparent; transition: 0.1s; }
+    .participant-card.is-speaking .participant-avatar { border-color: var(--green) !important; box-shadow: 0 0 14px var(--green) !important; }
+    .participant-name { font-size: 10px; color: #fff; }
+
+    .overlay-footer-controls { display: flex; justify-content: space-around; padding: 8px 12px; background: rgba(0,0,0,0.4); }
+    .overlay-ctrl-btn { background: rgba(255,255,255,0.08); border: none; border-radius: 8px; padding: 6px 10px; color: #fff; cursor: pointer; font-size: 10px; display: flex; flex-direction: column; align-items: center; }
+    .overlay-ctrl-btn.active-muted { background: rgba(242,63,67,0.3); color: #ff999b; }
+    .overlay-ctrl-btn.danger { background: var(--red); }
+  </style>
+</head>
+<body>
+
+  <!-- 1. PANTALLA DE AUTENTICACIÓN -->
+  <div id="auth-screen" class="auth-wrapper">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <a href='https://postimg.cc/3y1znhXc' target='_blank'>
+          <img src='https://i.postimg.cc/3y1znhXc/watermarked-img-14545949718416845833.jpg' alt='SquadLink Logo' class="auth-logo-img">
+        </a>
+        <h2>¡Te damos la bienvenida a SquadLink!</h2>
+        <p class="auth-subtitle">Chat de texto y llamadas grupales fluidas con overlay para juegos.</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button id="tab-login" class="tab-btn active">Iniciar Sesión</button>
+        <button id="tab-register" class="tab-btn">Crear Cuenta</button>
+      </div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label>CORREO ELECTRÓNICO *</label>
+          <input type="email" id="login-email" required placeholder="gamer@discord.local">
+        </div>
+        <div class="form-group">
+          <label>CONTRASEÑA *</label>
+          <input type="password" id="login-password" required placeholder="••••••••">
+        </div>
+        <button type="submit" class="btn-primary">Iniciar Sesión</button>
+        <div class="quick-demo-accounts">
+          <p>O inicia sesión rápido con cuentas demo:</p>
+          <div class="demo-buttons">
+            <button type="button" class="btn-secondary demo-btn" data-email="gamer1@discord.local" data-pass="123456">🎮 ProGamer99</button>
+            <button type="button" class="btn-secondary demo-btn" data-email="gamer2@discord.local" data-pass="123456">👑 ValkyrieQueen</button>
+          </div>
+        </div>
+      </form>
+
+      <form id="register-form" class="hidden">
+        <div class="form-group">
+          <label>NOMBRE DE USUARIO *</label>
+          <input type="text" id="reg-username" required placeholder="TuGamertag">
+        </div>
+        <div class="form-group">
+          <label>CORREO ELECTRÓNICO *</label>
+          <input type="email" id="reg-email" required placeholder="nombre@correo.com">
+        </div>
+        <div class="form-group">
+          <label>CONTRASEÑA *</label>
+          <input type="password" id="reg-password" required placeholder="Al menos 6 caracteres">
+        </div>
+        <button type="submit" class="btn-primary">Registrarse</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. APLICACIÓN PRINCIPAL -->
+  <div id="app-container" class="app-layout hidden">
+    <!-- Servidores -->
+    <nav class="servers-nav">
+      <div class="server-pill active" title="SquadLink">
+        <img src='https://i.postimg.cc/3y1znhXc/watermarked-img-14545949718416845833.jpg' alt="SquadLink" class="server-logo-img">
+      </div>
+      <div class="nav-separator"></div>
+      <div class="server-pill" title="Gaming Squad">🎮</div>
+      <div class="server-pill" title="Añadir Servidor">+</div>
+    </nav>
+
+    <!-- Sidebar: Canales y Contactos -->
+    <aside class="channels-sidebar">
+      <header class="guild-header">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <img src='https://i.postimg.cc/3y1znhXc/watermarked-img-14545949718416845833.jpg' style="width:24px; height:24px; border-radius:6px; object-fit:cover;" alt="SquadLink">
+          <span class="guild-name">SquadLink HQ</span>
+        </div>
+        <span class="guild-badge">PRO</span>
+      </header>
+
+      <div class="sidebar-scrollable">
+        <div class="channel-section">
+          <div class="section-title">CANALES DE TEXTO</div>
+          <div class="channel-item active"># general</div>
+        </div>
+
+        <div class="channel-section">
+          <div class="section-title">CANALES DE VOZ (WEBRTC)</div>
+          
+          <div class="voice-channel-card" id="vc-general" data-room="voice-general">
+            <div class="vc-header">
+              <span>🔊</span>
+              <span class="vc-name">Sala General</span>
+              <span class="vc-badge" id="vc-general-count">0</span>
+            </div>
+            <div class="vc-users-list" id="vc-general-users"></div>
+          </div>
+
+          <div class="voice-channel-card" id="vc-squad" data-room="voice-squad">
+            <div class="vc-header">
+              <span>🎙️</span>
+              <span class="vc-name">Gaming Squad</span>
+              <span class="vc-badge" id="vc-squad-count">0</span>
+            </div>
+            <div class="vc-users-list" id="vc-squad-users"></div>
+          </div>
+        </div>
+
+        <!-- AMIGOS Y BOTÓN DESTACADO -->
+        <div class="channel-section contacts-section">
+          <div class="section-header-row">
+            <span class="section-title">AMIGOS Y CONTACTOS</span>
+            <button id="btn-open-add-contact" class="btn-add-contact-badge">+ Añadir contacto nuevo</button>
+          </div>
+          <div id="contacts-list" class="contacts-list-container"></div>
+        </div>
+      </div>
+
+      <footer class="user-profile-bar">
+        <div class="avatar-circle" id="current-user-avatar">U</div>
+        <div class="user-meta">
+          <span id="current-user-name" class="user-display-name">Usuario</span>
+          <span class="user-status-desc">En línea</span>
+        </div>
+        <div class="user-actions">
+          <button id="btn-user-mic" class="icon-btn" title="Micrófono">🎙️</button>
+          <button id="btn-user-deaf" class="icon-btn" title="Sonido">🎧</button>
+          <button id="btn-logout" class="icon-btn" title="Salir">🚪</button>
+        </div>
+      </footer>
+    </aside>
+
+    <main class="chat-area">
+      <header class="chat-header">
+        <span class="chat-title"># general</span>
+        <span class="status-tag">⚡ Baja Latencia (WebRTC + WS)</span>
+      </header>
+
+      <div id="messages-container" class="messages-stream"></div>
+
+      <footer class="chat-input-bar">
+        <form id="chat-form" class="chat-input-wrap">
+          <input type="text" id="chat-input" placeholder="Enviar mensaje a #general..." autocomplete="off">
+          <button type="submit" class="chat-send-btn">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          </button>
+        </form>
+      </footer>
+    </main>
+  </div>
+
+  <!-- 3. MODAL: AÑADIR CONTACTO NUEVO -->
+  <div id="modal-add-contact" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>AÑADIR AMIGO NUEVO</h3>
+        <button id="btn-close-modal" class="modal-close">&times;</button>
+      </div>
+      <p class="modal-subtitle">Ingresa el correo electrónico o el nombre de usuario de tu amigo.</p>
+      <form id="form-add-contact">
+        <div class="modal-input-box">
+          <input type="text" id="input-contact-query" placeholder="gamer2@discord.local o ValkyrieQueen" required>
+          <button type="submit" class="btn-primary btn-submit-friend">Añadir contacto nuevo</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 4. BARRA FLOTANTE DE LLAMADA GRUPAL / GAMING OVERLAY -->
+  <div id="floating-call-overlay" class="floating-call-widget hidden">
+    <div class="overlay-header">
+      <div class="overlay-title-group">
+        <span class="live-dot pulse"></span>
+        <div>
+          <div class="overlay-status">VOZ CONECTADA</div>
+          <div id="overlay-room-name" class="overlay-room">Sala General</div>
+        </div>
+      </div>
+      <div>
+        <button id="btn-pip-mode" class="overlay-action-btn" title="Overlay flotante sobre juegos">🪟 Modo Juego PiP</button>
+        <button id="btn-collapse-overlay" class="overlay-action-btn">▼</button>
+      </div>
+    </div>
+
+    <div class="overlay-body">
+      <div class="overlay-participants-grid" id="overlay-participants-list"></div>
+    </div>
+
+    <div class="overlay-footer-controls">
+      <button id="btn-overlay-mic" class="overlay-ctrl-btn">🎙️ Mic</button>
+      <button id="btn-overlay-deaf" class="overlay-ctrl-btn">🎧 Sonido</button>
+      <button id="btn-overlay-disconnect" class="overlay-ctrl-btn danger">📞 Colgar</button>
+    </div>
+  </div>
+
+  <div id="remote-audio-container" style="display: none;"></div>
+
+  <!-- JAVASCRIPT CLIENTE INTEGRADO -->
+  <script>
+    let socket = null;
+    let currentUser = null;
+
+    // 1. LOGIN / REGISTRO
+    const tabLogin = document.getElementById('tab-login');
+    const tabRegister = document.getElementById('tab-register');
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+
+    tabLogin.addEventListener('click', () => {
+      tabLogin.classList.add('active'); tabRegister.classList.remove('active');
+      loginForm.classList.remove('hidden'); registerForm.classList.add('hidden');
+    });
+
+    tabRegister.addEventListener('click', () => {
+      tabRegister.classList.add('active'); tabLogin.classList.remove('active');
+      registerForm.classList.remove('hidden'); loginForm.classList.add('hidden');
+    });
+
+    document.querySelectorAll('.demo-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        document.getElementById('login-email').value = b.dataset.email;
+        document.getElementById('login-password').value = b.dataset.pass;
+        loginForm.dispatchEvent(new Event('submit'));
+      });
+    });
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: document.getElementById('login-email').value,
+          password: document.getElementById('login-password').value
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Credenciales inválidas');
+      startSession(data.user);
+    });
+
+    registerForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('reg-username').value,
+          email: document.getElementById('reg-email').value,
+          password: document.getElementById('reg-password').value
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) return alert(data.error || 'Error al registrarse');
+      startSession(data.user);
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      localStorage.removeItem('discord_user');
+      window.location.reload();
+    });
+
+    function startSession(user) {
+      currentUser = user;
+      localStorage.setItem('discord_user', JSON.stringify(user));
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('app-container').classList.remove('hidden');
+      document.getElementById('current-user-name').textContent = user.username;
+      const avatar = document.getElementById('current-user-avatar');
+      avatar.textContent = user.username.substring(0, 2).toUpperCase();
+      avatar.style.backgroundColor = user.avatarColor || '#5865F2';
+
+      initSocketApp();
+    }
+
+    const saved = localStorage.getItem('discord_user');
+    if (saved) {
+      try { startSession(JSON.parse(saved)); } catch (e) {}
+    }
+
+    // 2. SOCKET APP
+    function initSocketApp() {
+      socket = io();
+      socket.on('connect', () => {
+        socket.emit('authenticate', currentUser);
+        initContacts();
+        initChat();
+        initVoice();
+      });
+    }
+
+    // 3. CONTACTOS
+    let contactsList = [];
+    function initContacts() {
+      const modal = document.getElementById('modal-add-contact');
+      const inputQuery = document.getElementById('input-contact-query');
+
+      document.getElementById('btn-open-add-contact').addEventListener('click', () => {
+        modal.classList.remove('hidden');
+        inputQuery.value = '';
+        inputQuery.focus();
+      });
+
+      document.getElementById('btn-close-modal').addEventListener('click', () => modal.classList.add('hidden'));
+
+      document.getElementById('form-add-contact').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const query = inputQuery.value.trim();
+        if (!query) return;
+
+        try {
+          const res = await fetch('/api/contacts/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ currentUserId: currentUser.id, targetQuery: query })
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error);
+
+          contactsList.push(data.contact);
+          renderContacts();
+          modal.classList.add('hidden');
+          alert(`¡Amigo añadido! (${data.contact.username})`);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      fetch(`/api/contacts?currentUserId=${currentUser.id}`)
+        .then(r => r.json())
+        .then(list => {
+          contactsList = list;
+          renderContacts();
+        });
+
+      socket.on('contact-added', ({ contact }) => {
+        contactsList.push(contact);
+        renderContacts();
+      });
+
+      socket.on('presence-update', ({ userId, isOnline }) => {
+        const c = contactsList.find(x => x.id === userId);
+        if (c) { c.isOnline = isOnline; renderContacts(); }
+      });
+    }
+
+    function renderContacts() {
+      const container = document.getElementById('contacts-list');
+      if (!container) return;
+      container.innerHTML = '';
+      if (contactsList.length === 0) {
+        container.innerHTML = '<div style="font-size:11px; color:#949ba4; padding:6px;">Sin contactos. Usa + Añadir contacto nuevo.</div>';
+        return;
+      }
+      contactsList.forEach(c => {
+        const item = document.createElement('div');
+        item.className = 'contact-item';
+        item.innerHTML = `
+          <div class="contact-avatar" style="background-color: ${c.avatarColor || '#5865F2'}">
+            ${c.username.substring(0, 2).toUpperCase()}
+          </div>
+          <div style="flex: 1; overflow: hidden;">
+            <div style="font-size: 13px; font-weight: 600; color: #fff;">${c.username}</div>
+            <div style="font-size: 11px; color: #949ba4;">${c.isOnline ? 'En línea' : 'Desconectado'}</div>
+          </div>
+          <span class="contact-status-dot ${c.isOnline ? 'online' : 'offline'}"></span>
+        `;
+        container.appendChild(item);
+      });
+    }
+
+    // 4. CHAT
+    function initChat() {
+      const chatForm = document.getElementById('chat-form');
+      const chatInput = document.getElementById('chat-input');
+
+      chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = chatInput.value.trim();
+        if (!text) return;
+        socket.emit('send-message', { channelId: 'general', text });
+        chatInput.value = '';
+      });
+
+      fetch('/api/messages').then(r => r.json()).then(msgs => {
+        msgs.forEach(m => appendChatMessage(m));
+      });
+
+      socket.on('new-message', (msg) => appendChatMessage(msg));
+    }
+
+    function appendChatMessage(msg) {
+      const container = document.getElementById('messages-container');
+      const item = document.createElement('div');
+      item.className = 'message-entry';
+      const d = new Date(msg.timestamp);
+      const timeStr = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+
+      item.innerHTML = `
+        <div class="message-avatar" style="background-color: ${msg.senderColor || '#5865F2'}">
+          ${(msg.senderName || 'U').substring(0, 2).toUpperCase()}
+        </div>
+        <div>
+          <div>
+            <span class="message-author">${msg.senderName}</span>
+            <span class="message-time">Hoy a las ${timeStr}</span>
+          </div>
+          <div class="message-text">${msg.text}</div>
+        </div>
+      `;
+      container.appendChild(item);
+      container.scrollTop = container.scrollHeight;
+    }
+
+    // 5. LLAMADAS WEBRTC, VAD HALO VERDE Y OVERLAY PIP
+    let localStream = null;
+    let peerConnections = new Map();
+    let remoteAudios = new Map();
+    let voiceParticipants = new Map();
+    let currentVoiceRoom = null;
+    let isMuted = false;
+    let isDeafened = false;
+    let isSpeaking = false;
+    let pipWindow = null;
+
+    const rtcConfig = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+    function initVoice() {
+      document.querySelectorAll('.voice-channel-card').forEach(card => {
+        card.addEventListener('click', () => joinVoice(card.dataset.room));
+      });
+
+      document.getElementById('btn-user-mic').addEventListener('click', toggleMute);
+      document.getElementById('btn-user-deaf').addEventListener('click', toggleDeafen);
+      document.getElementById('btn-overlay-mic').addEventListener('click', toggleMute);
+      document.getElementById('btn-overlay-deaf').addEventListener('click', toggleDeafen);
+      document.getElementById('btn-overlay-disconnect').addEventListener('click', leaveVoice);
+      document.getElementById('btn-collapse-overlay').addEventListener('click', () => {
+        document.getElementById('floating-call-overlay').classList.toggle('collapsed');
+      });
+      document.getElementById('btn-pip-mode').addEventListener('click', toggleDocumentPiP);
+
+      socket.on('voice-room-users', async ({ roomId, peers }) => {
+        for (const peer of peers) {
+          voiceParticipants.set(peer.socketId, peer);
+          await createPeerConn(peer.socketId, true);
+        }
+        updateOverlayUI();
+      });
+
+      socket.on('user-joined-voice', ({ socketId, user }) => {
+        voiceParticipants.set(socketId, { user, isMuted: false, isDeafened: false, isSpeaking: false });
+        updateOverlayUI();
+      });
+
+      socket.on('signal-offer', async ({ callerSocketId, user, offer }) => {
+        if (user) voiceParticipants.set(callerSocketId, { user, isMuted: false, isDeafened: false, isSpeaking: false });
+        const pc = await createPeerConn(callerSocketId, false);
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('signal-answer', { targetSocketId: callerSocketId, answer });
+      });
+
+      socket.on('signal-answer', async ({ responderSocketId, answer }) => {
+        const pc = peerConnections.get(responderSocketId);
+        if (pc) await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      });
+
+      socket.on('signal-ice', async ({ senderSocketId, candidate }) => {
+        const pc = peerConnections.get(senderSocketId);
+        if (pc && candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      });
+
+      socket.on('peer-voice-state', ({ socketId, isSpeaking: spk, isMuted: mtd, isDeafened: dfd }) => {
+        const p = voiceParticipants.get(socketId);
+        if (p) {
+          if (spk !== undefined) p.isSpeaking = spk;
+          if (mtd !== undefined) p.isMuted = mtd;
+          if (dfd !== undefined) p.isDeafened = dfd;
+          const card = document.getElementById(`participant-card-${socketId}`);
+          if (card) card.classList.toggle('is-speaking', !!p.isSpeaking);
+
+          if (pipWindow && !pipWindow.closed) {
+            const pipCard = pipWindow.document.getElementById(`pip-card-${socketId}`);
+            if (pipCard) pipCard.classList.toggle('is-speaking', !!p.isSpeaking);
+          }
+        }
+      });
+
+      socket.on('user-left-voice', ({ socketId }) => {
+        peerConnections.get(socketId)?.close();
+        peerConnections.delete(socketId);
+        remoteAudios.get(socketId)?.remove();
+        remoteAudios.delete(socketId);
+        voiceParticipants.delete(socketId);
+        updateOverlayUI();
+      });
+    }
+
+    async function joinVoice(roomId) {
+      if (currentVoiceRoom === roomId) return;
+      if (currentVoiceRoom) leaveVoice();
+
+      try {
+        if (!localStream) {
+          localStream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+            video: false
+          });
+          setupAudioVAD(localStream);
+        }
+
+        currentVoiceRoom = roomId;
+        document.querySelectorAll('.voice-channel-card').forEach(c => c.classList.remove('connected-here'));
+        document.querySelector(`.voice-channel-card[data-room="${roomId}"]`)?.classList.add('connected-here');
+
+        voiceParticipants.set(socket.id, { user: currentUser, isMuted, isDeafened, isSpeaking: false });
+        socket.emit('join-voice-room', { roomId });
+
+        document.getElementById('overlay-room-name').textContent = roomId === 'voice-general' ? 'Sala General' : 'Gaming Squad';
+        document.getElementById('floating-call-overlay').classList.remove('hidden');
+        updateOverlayUI();
+      } catch (err) {
+        alert('Por favor, permite el acceso al micrófono para hablar.');
+      }
+    }
+
+    async function createPeerConn(targetSocketId, isInitiator) {
+      if (peerConnections.has(targetSocketId)) return peerConnections.get(targetSocketId);
+
+      const pc = new RTCPeerConnection(rtcConfig);
+      peerConnections.set(targetSocketId, pc);
+
+      localStream.getAudioTracks().forEach(t => pc.addTrack(t, localStream));
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) socket.emit('signal-ice', { targetSocketId, candidate: e.candidate });
+      };
+
+      pc.ontrack = (e) => {
+        let audio = remoteAudios.get(targetSocketId);
+        if (!audio) {
+          audio = document.createElement('audio');
+          audio.autoplay = true;
+          document.getElementById('remote-audio-container').appendChild(audio);
+          remoteAudios.set(targetSocketId, audio);
+        }
+        audio.srcObject = e.streams[0];
+        if (isDeafened) audio.muted = true;
+      };
+
+      if (isInitiator) {
+        const offer = await pc.createOffer({ offerToReceiveAudio: true });
+        await pc.setLocalDescription(offer);
+        socket.emit('signal-offer', { targetSocketId, offer });
+      }
+
+      return pc;
+    }
+
+    function setupAudioVAD(stream) {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        let speakingCount = 0;
+
+        setInterval(() => {
+          if (isMuted || !currentVoiceRoom) {
+            if (isSpeaking) setSpeaking(false);
+            return;
+          }
+
+          analyser.getByteFrequencyData(dataArray);
+          let sum = dataArray.reduce((acc, val) => acc + val, 0);
+          let avg = sum / dataArray.length;
+
+          speakingCount = avg > 24 ? Math.min(speakingCount + 1, 4) : Math.max(speakingCount - 1, 0);
+          const spk = speakingCount >= 2;
+          if (spk !== isSpeaking) setSpeaking(spk);
+        }, 70);
+      } catch (e) {}
+    }
+
+    function setSpeaking(spk) {
+      isSpeaking = spk;
+      const me = voiceParticipants.get(socket.id);
+      if (me) me.isSpeaking = spk;
+
+      const card = document.getElementById(`participant-card-${socket.id}`);
+      if (card) card.classList.toggle('is-speaking', spk);
+
+      if (pipWindow && !pipWindow.closed) {
+        const pipCard = pipWindow.document.getElementById(`pip-card-${socket.id}`);
+        if (pipCard) pipCard.classList.toggle('is-speaking', spk);
+      }
+
+      socket.emit('voice-state-update', { roomId: currentVoiceRoom, isSpeaking: spk });
+    }
+
+    function toggleMute() {
+      isMuted = !isMuted;
+      localStream?.getAudioTracks().forEach(t => t.enabled = !isMuted);
+      document.getElementById('btn-user-mic').textContent = isMuted ? '🔇' : '🎙️';
+      document.getElementById('btn-user-mic').classList.toggle('active-muted', isMuted);
+      document.getElementById('btn-overlay-mic').classList.toggle('active-muted', isMuted);
+      document.getElementById('btn-overlay-mic').textContent = isMuted ? '🔇 Mute' : '🎙️ Mic';
+      socket.emit('voice-state-update', { roomId: currentVoiceRoom, isMuted });
+    }
+
+    function toggleDeafen() {
+      isDeafened = !isDeafened;
+      if (isDeafened && !isMuted) toggleMute();
+      remoteAudios.forEach(a => a.muted = isDeafened);
+      document.getElementById('btn-user-deaf').textContent = isDeafened ? '🔕' : '🎧';
+      document.getElementById('btn-user-deaf').classList.toggle('active-muted', isDeafened);
+      document.getElementById('btn-overlay-deaf').classList.toggle('active-muted', isDeafened);
+      socket.emit('voice-state-update', { roomId: currentVoiceRoom, isDeafened });
+    }
+
+    function leaveVoice() {
+      if (!currentVoiceRoom) return;
+      socket.emit('leave-voice-room');
+      peerConnections.forEach(pc => pc.close());
+      peerConnections.clear();
+      remoteAudios.forEach(a => a.remove());
+      remoteAudios.clear();
+      voiceParticipants.clear();
+      document.querySelectorAll('.voice-channel-card').forEach(c => c.classList.remove('connected-here'));
+      document.getElementById('floating-call-overlay').classList.add('hidden');
+      currentVoiceRoom = null;
+      if (pipWindow) pipWindow.close();
+    }
+
+    function updateOverlayUI() {
+      const listEl = document.getElementById('overlay-participants-list');
+      if (!listEl) return;
+      listEl.innerHTML = '';
+
+      voiceParticipants.forEach((p, sId) => {
+        const card = document.createElement('div');
+        card.className = `participant-card ${p.isSpeaking ? 'is-speaking' : ''}`;
+        card.id = `participant-card-${sId}`;
+        card.innerHTML = `
+          <div class="participant-avatar" style="background-color: ${p.user.avatarColor || '#5865F2'}">
+            ${p.user.username.substring(0, 2).toUpperCase()}
+          </div>
+          <div class="participant-name">${sId === socket.id ? '(Tú) ' : ''}${p.user.username}</div>
+        `;
+        listEl.appendChild(card);
+      });
+
+      if (pipWindow && !pipWindow.closed) syncPiP();
+    }
+
+    // MODO JUEGO DOCUMENT PICTURE-IN-PICTURE (ALWAYS-ON-TOP)
+    async function toggleDocumentPiP() {
+      if (!('documentPictureInPicture' in window)) {
+        return alert('Tu navegador no soporta Document PiP nativo (usa Chrome/Edge para ventana flotante sobre juegos).');
+      }
+
+      if (pipWindow && !pipWindow.closed) {
+        pipWindow.close();
+        return;
+      }
+
+      pipWindow = await window.documentPictureInPicture.requestWindow({ width: 320, height: 210 });
+      const style = document.createElement('style');
+      style.textContent = `
+        body { margin: 0; padding: 10px; background: #1e1f22; color: #dbdee1; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        .pip-header { font-size: 11px; font-weight: 800; color: #23a55a; margin-bottom: 6px; }
+        .pip-grid { display: flex; gap: 8px; flex: 1; align-items: center; justify-content: center; }
+        .pip-user { display: flex; flex-direction: column; align-items: center; font-size: 10px; gap: 3px; }
+        .pip-avatar { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #fff; border: 3px solid transparent; }
+        .pip-user.is-speaking .pip-avatar { border-color: #23a55a !important; box-shadow: 0 0 12px #23a55a; }
+        .pip-controls { display: flex; gap: 6px; }
+        .pip-btn { flex: 1; padding: 6px; background: rgba(255,255,255,0.1); border: none; color: #fff; border-radius: 6px; cursor: pointer; font-size: 11px; }
+      `;
+      pipWindow.document.head.appendChild(style);
+      syncPiP();
+    }
+
+    function syncPiP() {
+      if (!pipWindow || pipWindow.closed) return;
+      const doc = pipWindow.document;
+      doc.body.innerHTML = `
+        <div class="pip-header">🎮 SQUADLINK OVERLAY (ALWAYS-ON-TOP)</div>
+        <div class="pip-grid" id="pip-grid"></div>
+        <div class="pip-controls">
+          <button id="pip-mic" class="pip-btn">${isMuted ? '🔇 Muteado' : '🎙️ Mic'}</button>
+          <button id="pip-hangup" class="pip-btn" style="background:#f23f43">📞 Colgar</button>
+        </div>
+      `;
+
+      const grid = doc.getElementById('pip-grid');
+      voiceParticipants.forEach((p, sId) => {
+        const u = doc.createElement('div');
+        u.className = `pip-user ${p.isSpeaking ? 'is-speaking' : ''}`;
+        u.id = `pip-card-${sId}`;
+        u.innerHTML = `
+          <div class="pip-avatar" style="background-color: ${p.user.avatarColor || '#5865F2'}">
+            ${p.user.username.substring(0, 2).toUpperCase()}
+          </div>
+          <span>${sId === socket.id ? '(Tú) ' : ''}${p.user.username}</span>
+        `;
+        grid.appendChild(u);
+      });
+
+      doc.getElementById('pip-mic').addEventListener('click', toggleMute);
+      doc.getElementById('pip-hangup').addEventListener('click', () => {
+        leaveVoice();
+        pipWindow.close();
+      });
+    }
+  </script>
+</body>
+</html>
